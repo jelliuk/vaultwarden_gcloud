@@ -1,6 +1,6 @@
 # Vaultwarden self-hosted on Google Cloud for Free
 
-Vaultwarden installation optimized for Google Cloud's 'always free' f1-micro compute instance
+Vaultwarden installation optimized for Google Cloud's 'always free' e2-micro compute instance
 
 > _Note: if you follow these instructions the end product is a self-hosted instance of vaultwarden running in the cloud and will be free **unless** you exceed the 1GB egress per month or have egress to China or Australia. I talk about best practices to help avoid China/AUS egress, but there's a chance you can get charges from that so please keep that in mind._
 
