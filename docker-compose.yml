@@ -1,6 +1,5 @@
 version: '3'
 
-
 services:
   vaultwarden:
     # Standard Bitwarden is very resource-heavy and cannot run on micro cloud instances
@@ -10,16 +9,16 @@ services:
     restart: always
     container_name: vaultwarden
     depends_on: 
-    - proxy
+    - swag
     volumes:
-    - ${PWD}/vaultwarden:/data
-    - ${PWD}/utilities/backup.sh:/backup.sh:ro
+    - ./vaultwarden/data:/data
+    - ./vaultwarden/utilities/backup.sh:/backup.sh:ro
     environment:
-    - LOG_FILE=/data/vaultwarden.log
+    - LOG_FILE=/data/bitwarden.log
     - WEBSOCKET_ENABLED=true            # required for websockets
     - SHOW_PASSWORD_HINT=false
     - DOMAIN=https://${DOMAIN}          # DOMAIN is set in .env but doesn't have protocol prefix
-    - SMTP_FROM_NAME=vaultwarden (${DOMAIN})
+    - SMTP_FROM_NAME=Bitwarden (${DOMAIN})
     - IP_HEADER=X-Forwarded-For
     - ADMIN_TOKEN                       # Value-less variables are set in .env
     - SIGNUPS_ALLOWED
@@ -54,46 +53,45 @@ services:
              fi &&
              exec /start.sh'
 
-  proxy:
-    # Caddy provides an automatic HTTPS reverse proxy with Let's Encrypt cert provisioning
-    # Uses local Dockerfile to include tzdata package
-    # https://caddyserver.com/
-    build: ./docker/caddy
+  swag:
+    # LinuxServer.io SWAG provides an automatic HTTPS reverse proxy with Let's Encrypt cert provisioning
+    # https://docs.linuxserver.io/general/swag
+    image: lscr.io/linuxserver/swag:latest
     restart: always
-    container_name: proxy
+    container_name: swag
+    cap_add:
+    -  NET_ADMIN
     volumes:
-    - ${PWD}/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-    - ${PWD}/caddy/data:/data
-    - caddycerts:/root/.caddy
+      - ./swag/config:/config
     ports:
-    - 80:80                             # Port 80 is necessary for Let's Encrypt ACME
-    - 443:443
+      - 80:80 # Port 80 is necessary for Let's Encrypt ACME
+      - 443:443
     environment:
-    - LOG_FILE=/data/logs/caddy.log
-    - ACME_AGREE=true                   # agree to ACME for auto HTTPS
-    - DOMAIN                            # Value-less variables are set in .env
-    - EMAIL
-    - TZ
-    labels:
-    - "com.centurylinklabs.watchtower.enable=false"
-
+      - TZ
+      - PUID
+      - PGID
+      - URL=${URL}
+      - SUBDOMAINS=wildcard
+      - VALIDATION=dns
+      - DNSPLUGIN=cloudflare #optional
+      - EMAIL=${EMAIL} #optional
+      - DOCKER_MODS=linuxserver/mods:swag-auto-reload|linuxserver/mods:swag-cloudflare-real-ip #|linuxserver/mods:swag-dashboard|linuxserver/mods:swag-dbip
 
   ddns:
     # This provides a ddclient dynamic dns updating cron which is as simple as running it
     # and editing the ddns/config/ddclient.conf file
     # https://github.com/linuxserver/docker-ddclient
-    image: linuxserver/ddclient
+    image: lscr.io/linuxserver/ddclient:latest
     restart: always
     container_name: ddns
     depends_on: 
     - vaultwarden
     volumes:
-    - ${PWD}/ddns:/config
+    - ./ddns/config:/config
     environment:
     - PUID
     - PGID
     - TZ
-
 
   fail2ban:
     # Implements fail2ban functionality, banning ips that 
@@ -106,8 +104,8 @@ services:
     depends_on:
     - vaultwarden
     volumes:
-    - ${PWD}/fail2ban:/data
-    - ${PWD}/vaultwarden:/vaultwarden:ro
+    - ./fail2ban/data:/data
+    - ./vaultwarden:/vaultwarden:ro
     network_mode: "host"
     privileged: true
     cap_add:
@@ -126,7 +124,6 @@ services:
     - SSMTP_TLS=${SMTP_TLS}
     - SSMTP_STARTTLS=YES
     - TZ
-
 
   countryblock:
     # The block script will block any country (defaults to CN and AU)
@@ -156,7 +153,6 @@ services:
              crond -d 8 &&
              bash /block.sh start'    
 
-
   watchtower:
     # Watchtower will pull down your new image, gracefully shut down your existing container 
     # and restart it with the same options that were used when it was deployed initially
@@ -172,7 +168,3 @@ services:
     - WATCHTOWER_CLEANUP=true
     - WATCHTOWER_SCHEDULE
     - TZ
-
-
-volumes:
-  caddycerts:
