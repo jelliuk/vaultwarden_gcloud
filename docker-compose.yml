@@ -66,6 +66,7 @@ services:
     ports:
       - 80:80 # Port 80 is necessary for Let's Encrypt ACME
       - 443:443
+      #- 81:81 dashboard - not used currently
     environment:
       - TZ
       - PUID
