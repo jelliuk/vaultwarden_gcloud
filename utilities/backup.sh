@@ -5,14 +5,13 @@
 # Licensed under the terms of MIT
 
 LOG=/var/log/backup.log
-SSMTP_CONF=/etc/ssmtp/ssmtp.conf
+MUTTRC=/tmp/muttrc
 
 # vaultwarden Email settings - usually provided as environment variables for but may be set below:
 # SMTP_HOST=
 # SMTP_FROM=
 # SMTP_PORT=
-# SMTP_SSL=
-# SMTP_EXPLICIT_TLS=
+# SMTP_SECURITY=
 # SMTP_USERNAME=
 # SMTP_PASSWORD
 AUTH_METHOD=LOGIN
@@ -22,39 +21,22 @@ AUTH_METHOD=LOGIN
 # BACKUP_EMAIL_TO=
 
 
-# Convert "tRuE" and "FaLsE" to "yes" and "no" for ssmtp.conf
-# $1: string to convert
-convert_bool() {
-  case $1 in
-    ([Tt][Rr][Uu][Ee]) echo yes;;
-    ([Ff][Aa][Ll][Ss][Ee]) echo no;;
-    (*) echo ERROR;;
-  esac
-}
-
-
 # Initialize email settings
-# Direct application of vaultwarden SMTP settings except:
-# * UseTLS - converts true to yes and false to no
-# * UseSTARTTLS - vaultwarden's SMTP_EXPLICIT_TLS is backwards, so flip from true/false to no/yes
-#   * see https://github.com/dani-garcia/vaultwarden/issues/851
 email_init() {
-  # Install ssmtp
-  apk --update --no-cache add ssmtp mutt
-
-  # Copy configuration to ssmtp.conf
-  cat > $SSMTP_CONF << EOF
-root=$SMTP_FROM
-mailhub=$SMTP_HOST:$SMTP_PORT
-UseTLS=$(convert_bool $SMTP_SSL)
-UseSTARTTLS=$([ $(convert_bool $SMTP_EXPLICIT_TLS) == "yes" ] && echo no || echo yes)
-AuthUser=$SMTP_USERNAME
-AuthPass=$SMTP_PASSWORD
-AuthMethod=$AUTH_METHOD
-FromLineOverride=yes
+  apk --update --no-cache add mutt
+  if [ "$SMTP_SECURITY" == "force_tls" ]; then
+    MUTT_SSL_KEY=ssl_force_tls
+    SMTP_PROTO=smtps
+  else
+    MUTT_SSL_KEY=ssl_starttls
+    SMTP_PROTO=smtp
+  fi
+  cat >"$MUTTRC" <<EOF
+set ${MUTT_SSL_KEY}=yes
+set smtp_url="${SMTP_PROTO}://${SMTP_USERNAME}@${SMTP_HOST}:${SMTP_PORT}"
+set smtp_pass="${SMTP_PASSWORD}"
 EOF
-
-  printf "Finished configuring email (%b)\n" "$SSMTP_CONF" > $LOG
+  printf "Finished configuring email.\n" >$LOG
 }
 
 
@@ -66,12 +48,11 @@ email_send() {
   if [ -n "$3" ]; then
     ATTACHMENT="-a $3 --"
   fi
-  EMAIL_RESULT=$(printf "$2" | EMAIL="$BACKUP_EMAIL_FROM_NAME <$SMTP_FROM>" mutt -s "$1" $ATTACHMENT "$BACKUP_EMAIL_TO" 2>&1)
-  
-  if [ -n "$EMAIL_RESULT" ]; then
-    printf "Email error: %b\n" "$EMAIL_RESULT" > $LOG
+
+  if EMAIL_RESULT=$(printf "$2" | EMAIL="$BACKUP_EMAIL_FROM_NAME <$SMTP_FROM>" mutt -F "$MUTTRC" -s "$1" $ATTACHMENT "$BACKUP_EMAIL_TO" 2>&1); then
+    printf "Sent e-mail (%b) to %b\n" "$1" "$BACKUP_EMAIL_TO" >> $LOG
   else
-    printf "Sent e-mail (%b) to %b\n" "$1" "$BACKUP_EMAIL_TO" > $LOG  
+    printf "Email error: %b\n" "$EMAIL_RESULT" >> $LOG
   fi
 }
 
@@ -81,7 +62,7 @@ email_send() {
 # $1: backup filename
 email_body() {
   EXT=${1##*.}
-  FILE=${1%%*.}
+  FILE=${1%%.*}
 
   # Email body messages
   EMAIL_BODY_TAR="Email backup successful.
@@ -111,7 +92,7 @@ rclone_init() {
   chown root:root $RCLONE
   chmod 755 $RCLONE
 
-  printf "Rclone installed to %b\n" "$RCLONE" > $LOG
+  printf "Rclone installed to %b\n" "$RCLONE" >> $LOG
 }
 
 
@@ -149,14 +130,14 @@ make_backup() {
   else
     tar -czf $BACKUP_FILE -C $SQL_BACKUP_DIR $SQL_NAME -C $DATA $FILES
   fi
-  printf "Backup file created at %b\n" "$BACKUP_FILE" > $LOG
+  printf "Backup file created at %b\n" "$BACKUP_FILE" >> $LOG
 
   # cleanup tmp folder
   rm -f $SQL_BACKUP_NAME
 
   # rm any backups older than 30 days
   find $BACKUP_DIR/* -mtime +$BACKUP_DAYS -exec rm {} \;
-  
+
   printf "$BACKUP_FILE"
 }
 
@@ -166,37 +147,37 @@ make_backup() {
 
 
 # Initialize e-mail if (using e-mail backup OR BACKUP_EMAIL_NOTIFY is set) AND ssmtp has not been configured
-if [ "$1" == "email" -o -n "$BACKUP_EMAIL_NOTIFY" ] && [ ! -f "$SSMTP_CONF" ]; then
+if [ "$1" == "email" -o -n "$BACKUP_EMAIL_NOTIFY" ] && [ ! -f "$MUTTRC" ]; then
   email_init
 fi
 # Initialize rclone if BACKUP=rclone and $(which rclone) is blank
 if [ "$1" == "rclone" -a -z "$(which rclone)" ]; then
   rclone_init
-fi 
+fi
 
 
 # Handle E-mail Backup
 if [ "$1" == "email" ]; then
-  printf "Running email backup\n" > $LOG
+  printf "Running email backup\n" >> $LOG
 
   # Backup and send e-mail
   RESULT=$(make_backup)
   FILENAME=$(basename $RESULT)
   BODY=$(email_body $FILENAME)
   email_send "$BACKUP_EMAIL_FROM_NAME - $FILENAME" "$BODY" $RESULT
-  
+
 
 # Handle rclone Backup
 elif [ "$1" == "rclone" ]; then
-  printf "Running rclone backup\n" > $LOG
-  
+  printf "Running rclone backup\n" >> $LOG
+
   # Only run if $BACKUP_RCLONE_CONF has been setup
   if [ -s "$BACKUP_RCLONE_CONF" ]; then
     RESULT=$(make_backup)
 
     # Sync with rclone
     REMOTE=$(rclone --config $BACKUP_RCLONE_CONF listremotes | head -n 1)
-    rclone --config $BACKUP_RCLONE_CONF sync $BACKUP_DIR $REMOTE$BACKUP_RCLONE_DEST
+    rclone --config $BACKUP_RCLONE_CONF sync $BACKUP_DIR "$REMOTE$BACKUP_RCLONE_DEST"
 
     # Send email if configured
     if [ -n "$BACKUP_EMAIL_NOTIFY" ]; then
@@ -206,8 +187,8 @@ elif [ "$1" == "rclone" ]; then
 
 
 elif [ "$1" == "local" ]; then
-  printf "Running local backup\n" > $LOG
-  
+  printf "Running local backup\n" >> $LOG
+
   RESULT=$(make_backup)
 
   if [ -n "$BACKUP_EMAIL_NOTIFY" ]; then
