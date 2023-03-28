@@ -208,6 +208,16 @@ gcloud compute disks add-resource-policies vaultwarden-rs \
     --zone us-east1-b
 ```
 
+## f1-micro to e2-micro Migration
+
+Follow these steps to migrate from the previous free tier f1-micro to the new free tier e2-micro.
+
+1.  Shut down your VM instance
+2.  Edit the vm instance to machine type e2-micro using the google cloud GUI or cloud shell. 
+3.  Boot the VM again and everything should start as before. 
+
+Note that after shutting down and booting the new machine type, it may take a while for the DNS record's TTL to expire and point to the new IP which gets changed after a shutdown. 
+
 # Notes
 
 For a pure Cloudflare approach, see [this issue](https://github.com/dadatuputi/vaultwarden_gcloud/issues/5).
