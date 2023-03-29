@@ -18,7 +18,7 @@ services:
     - WEBSOCKET_ENABLED=true            # required for websockets
     - SHOW_PASSWORD_HINT=false
     - DOMAIN=https://${DOMAIN}          # DOMAIN is set in .env but doesn't have protocol prefix
-    - SMTP_FROM_NAME=Bitwarden (${DOMAIN})
+    - SMTP_FROM_NAME=Vaultwarden (${DOMAIN})
     - IP_HEADER=X-Forwarded-For
     - ADMIN_TOKEN                       # Value-less variables are set in .env
     - SIGNUPS_ALLOWED
