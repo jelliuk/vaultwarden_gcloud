@@ -106,7 +106,7 @@ services:
     - vaultwarden
     volumes:
     - ./fail2ban/data:/data
-    - ./vaultwarden:/vaultwarden:ro
+    - ./vaultwarden/data:/vaultwarden:ro
     network_mode: "host"
     privileged: true
     cap_add:
